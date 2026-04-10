@@ -6,10 +6,12 @@
 
 - **8大采集源**：OpenAI、Google/DeepMind、Anthropic、Meta AI、HuggingFace、综合RSS、中国AI厂商、联网搜索
 - **日期过滤**：只保留最近1天内的新闻，确保时效性
+- **AI 智能去重**：标题级快速去重 + AI语义合并，同一事件只保留一条
 - **AI 智能处理**：通过 Gemini/Kimi 等大模型生成中文摘要和分类
 - **邮件推送**：精美的 HTML 邮件，按厂商分组展示
 - **定时执行**：每天 07:30 自动运行（支持 crontab）
 - **一键部署**：`deploy.py` 自动上传 + 安装依赖 + 配置定时任务
+- **容错处理**：SSL跳过 + 403自动重试 + AI失败降级保底
 
 ## 📁 项目结构
 
@@ -27,7 +29,7 @@ Agent/
 │   └── web_search_collector.py # 联网搜索（Google/Bing）
 ├── processor/               # AI 处理
 │   ├── gemini_client.py     # AI 客户端（支持自定义URL）
-│   └── news_processor.py    # 去重、摘要、分类
+│   └── news_processor.py    # AI去重合并、摘要、分类
 ├── delivery/                # 邮件推送
 │   ├── email_sender.py      # SMTP 发送
 │   └── templates/           # HTML 邮件模板
@@ -128,9 +130,29 @@ collectors:
 | Anthropic | anthropic.com/news | 官方动态 |
 | Meta AI | ai.meta.com/blog | FAIR 博客 |
 | HuggingFace | huggingface.co | 热门模型 |
-| 综合RSS | 14个RSS源 | TechCrunch/TheVerge/36kr/机器之心等 |
+| 综合RSS | 多个RSS源 | TechCrunch/TheVerge/VentureBeat/机器之心/量子位等 |
 | 中国AI | 8家厂商 | 通义千问/豆包/GLM/Kimi/DeepSeek/文心/MiniMax/百川 |
 | 联网搜索 | Google News + Bing | 关键词实时搜索 |
+
+## 🔄 处理流程
+
+```
+采集（8个采集器并发）
+    ↓
+日期过滤（只保留1天内）
+    ↓
+标题去重（关键词重叠度 > 65% 合并）
+    ↓
+AI语义合并（同一事件只保留最完整的一条）
+    ↓
+数据库去重（URL哈希比对）
+    ↓
+AI摘要生成（并发批量处理）
+    ↓
+分类 + 重要度评估
+    ↓
+HTML邮件渲染 → SMTP推送
+```
 
 ## 📝 技术栈
 
