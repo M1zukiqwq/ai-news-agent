@@ -1,0 +1,115 @@
+# AI News Agent 配置文件
+# AI 模型配置（兼容OpenAI接口格式，支持自定义URL）
+ai:
+  base_url: "https://api.moonshot.cn/v1"   # Kimi API Base URL（OpenAI兼容格式）
+  api_key: "${AI_API_KEY}"                   # 从 .env 文件读取
+  model: "kimi-k2.5"                         # 模型名称
+  temperature: 1.0                    # kimi-k2.5 思考模型要求 temperature=1
+  max_tokens: 4096
+  disable_thinking: true              # 禁用思考模式以加速响应（推荐开启）
+
+# 邮件配置
+email:
+  smtp_host: "smtp.qq.com"              # SMTP服务器地址
+  smtp_port: 465                        # SMTP端口
+  use_ssl: true                         # 是否使用SSL
+  sender: "${EMAIL_SENDER}"             # 发件人邮箱
+  password: "${EMAIL_PASSWORD}"         # 邮箱授权码（非登录密码）
+  recipients:                           # 收件人列表
+    - "${EMAIL_RECIPIENT}"
+
+# 调度配置
+schedule:
+  daily_time: "07:30"                   # 每天推送时间
+  timezone: "Asia/Shanghai"             # 时区
+
+# 采集源配置
+# max_age_days: 只保留N天内的新闻（全局默认7天）
+collectors:
+  openai:
+    enabled: true
+    name: "OpenAI"
+    max_age_days: 1
+    urls:
+      - "https://openai.com/blog"
+      - "https://openai.com/research"
+  google:
+    enabled: true
+    name: "Google / DeepMind"
+    max_age_days: 1
+    urls:
+      - "https://blog.google/technology/ai/"
+      - "https://deepmind.google/blog/"
+  anthropic:
+    enabled: true
+    name: "Anthropic"
+    max_age_days: 1
+    urls:
+      - "https://www.anthropic.com/news"
+  meta:
+    enabled: true
+    name: "Meta AI"
+    max_age_days: 1
+    urls:
+      - "https://ai.meta.com/blog/"
+  huggingface:
+    enabled: true
+    name: "HuggingFace"
+    max_age_days: 1
+    trending_models_url: "https://huggingface.co/api/trending"
+  general_news:
+    enabled: true
+    name: "综合AI资讯"
+    max_age_days: 1
+    feeds:
+      # 英文源
+      - "https://techcrunch.com/category/artificial-intelligence/feed/"
+      - "https://www.artificialintelligence-news.com/feed/"
+      - "https://openai.com/blog/rss.xml"
+      - "https://blogs.microsoft.com/ai/feed/"
+      - "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"
+      - "https://venturebeat.com/category/ai/feed/"
+      - "https://arstechnica.com/tagged/ai/feed/"
+      # 中文源
+      - "https://www.36kr.com/feed"
+      - "https://www.jiqizhixin.com/rss"
+      - "https://www.qbitai.com/feed"
+      - "https://www.chinaz.com/rss/ai.xml"
+  china_ai:
+    enabled: true
+    name: "中国AI厂商"
+    max_age_days: 1
+    enabled_sources:
+      - qwen
+      - doubao
+      - glm
+      - kimi
+      - deepseek
+      - ernie
+      - minimax
+      - baichuan
+  web_search:
+    enabled: true
+    name: "联网搜索"
+    max_age_days: 1
+    engines:
+      - "google_news"
+      - "bing_news"
+    queries:
+      - "AI new model release"
+      - "artificial intelligence breakthrough"
+      - "LLM model launch 2026"
+      - "AI开源模型发布"
+      - "OpenAI Google Anthropic news"
+      - "DeepSeek Qwen GLM 新模型"
+
+# 存储配置
+storage:
+  db_path: "data/news_history.db"
+
+# 日志配置
+logging:
+  level: "INFO"
+  log_dir: "logs"
+  max_size_mb: 10
+  retention_days: 30
