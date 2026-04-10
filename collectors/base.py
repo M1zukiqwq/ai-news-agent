@@ -30,11 +30,19 @@ class BaseCollector(ABC):
             self._client = httpx.AsyncClient(
                 timeout=30.0,
                 follow_redirects=True,
+                verify=False,  # 跳过SSL验证（部分网站证书过期/自签名）
                 headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                                  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                                  "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
                     "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "Cache-Control": "no-cache",
+                    "Sec-Fetch-Dest": "document",
+                    "Sec-Fetch-Mode": "navigate",
+                    "Sec-Fetch-Site": "none",
+                    "Sec-Fetch-User": "?1",
+                    "Upgrade-Insecure-Requests": "1",
                 }
             )
         return self._client
@@ -49,16 +57,33 @@ class BaseCollector(ABC):
         """采集新闻，返回标准化新闻条目列表"""
         pass
 
-    async def fetch_page(self, url: str) -> Optional[str]:
-        """获取网页HTML内容"""
-        try:
-            client = await self.get_client()
-            response = await client.get(url)
-            response.raise_for_status()
-            return response.text
-        except httpx.HTTPError as e:
-            logger.warning(f"[{self.name}] 获取页面失败 {url}: {e}")
-            return None
+    async def fetch_page(self, url: str, retries: int = 2) -> Optional[str]:
+        """获取网页HTML内容，支持重试"""
+        for attempt in range(retries):
+            try:
+                client = await self.get_client()
+                response = await client.get(url)
+                response.raise_for_status()
+                return response.text
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 403:
+                    logger.debug(f"[{self.name}] 403 被拒: {url}")
+                    return None
+                if e.response.status_code == 429 and attempt < retries - 1:
+                    await asyncio.sleep(2)
+                    continue
+                logger.warning(f"[{self.name}] HTTP {e.response.status_code} {url}")
+                return None
+            except httpx.ConnectError as e:
+                logger.warning(f"[{self.name}] 连接失败 {url}: {e}")
+                return None
+            except Exception as e:
+                if attempt < retries - 1:
+                    await asyncio.sleep(1)
+                    continue
+                logger.warning(f"[{self.name}] 获取页面失败 {url}: {e}")
+                return None
+        return None
 
     async def fetch_json(self, url: str, params: dict = None) -> Optional[dict]:
         """获取JSON API响应"""

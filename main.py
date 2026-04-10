@@ -7,12 +7,21 @@ import os
 import asyncio
 import argparse
 import signal
+import warnings
 from pathlib import Path
 from datetime import datetime
 
 import yaml
 from dotenv import load_dotenv
 from loguru import logger
+
+# 抑制 SSL 验证关闭时的警告（verify=False）
+warnings.filterwarnings("ignore", message="Unverified HTTPS request")
+try:
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+except ImportError:
+    pass
 
 # 确保项目根目录在 Python 路径中
 sys.path.insert(0, str(Path(__file__).parent))
@@ -219,9 +228,9 @@ def main():
     parser.add_argument(
         "command",
         nargs="?",
-        default="daemon",
-        choices=["daemon", "once", "test"],
-        help="运行模式: daemon=守护进程, once=单次执行, test=测试配置 (默认: daemon)",
+        default="run",
+        choices=["run", "schedule", "test"],
+        help="运行模式: run=单次执行, schedule=定时调度, test=测试配置 (默认: run)",
     )
     args = parser.parse_args()
 
@@ -235,9 +244,9 @@ def main():
 
     if args.command == "test":
         asyncio.run(run_test(config))
-    elif args.command == "once":
+    elif args.command == "run":
         asyncio.run(run_once(config))
-    elif args.command == "daemon":
+    elif args.command == "schedule":
         asyncio.run(run_daemon(config))
 
 

@@ -42,12 +42,115 @@ class NewsProcessor:
         self.gemini = gemini_client
         self.db = database
 
+    def _title_deduplicate(self, items: list[NewsItem]) -> list[NewsItem]:
+        """
+        标题级去重：相似标题只保留信息最丰富的一条
+        通过标题关键词重叠度判断
+        """
+        if len(items) <= 1:
+            return items
+
+        def title_similarity(a: str, b: str) -> float:
+            """简单的标题相似度计算"""
+            # 提取关键词（去掉常见停用词）
+            stop_words = {"the", "a", "an", "in", "on", "at", "to", "for", "of", "and", "is", "are",
+                         "was", "were", "be", "been", "new", "ai", "的", "了", "在", "是", "和", "与"}
+            words_a = set(a.lower().split()) - stop_words
+            words_b = set(b.lower().split()) - stop_words
+            if not words_a or not words_b:
+                return 0.0
+            intersection = words_a & words_b
+            return len(intersection) / min(len(words_a), len(words_b))
+
+        kept = []
+        removed = 0
+        for item in items:
+            is_dup = False
+            for existing in kept:
+                sim = title_similarity(item.title, existing.title)
+                if sim >= 0.65:
+                    # 保留摘要更长或来源更权威的
+                    existing_len = len(existing.summary or "")
+                    item_len = len(item.summary or "")
+                    if item_len > existing_len:
+                        kept.remove(existing)
+                        kept.append(item)
+                    is_dup = True
+                    removed += 1
+                    break
+            if not is_dup:
+                kept.append(item)
+
+        if removed > 0:
+            logger.info(f"📊 标题去重: {len(items)} → {len(kept)} 条（合并 {removed} 条相似新闻）")
+        return kept
+
+    async def _ai_merge_duplicates(self, items: list[NewsItem]) -> list[NewsItem]:
+        """
+        AI 智能合并：让 AI 判断哪些新闻是关于同一事件的，
+        并将它们合并为一条更完整的报道
+        """
+        if len(items) <= 3:
+            return items
+
+        # 构建新闻列表给 AI
+        news_list = []
+        for idx, item in enumerate(items, 1):
+            info = f"{idx}. [{item.source}] {item.title}"
+            if item.summary:
+                info += f"\n   摘要: {item.summary[:150]}"
+            news_list.append(info)
+
+        prompt = f"""以下是今天采集到的 {len(items)} 条AI新闻。请检查是否存在关于同一事件/同一话题的重复报道。
+
+{chr(10).join(news_list)}
+
+如果有重复报道，返回需要合并的条目索引组（保留信息最完整的一条）。
+返回JSON格式：
+{{"merge_groups": [{{"keep": 1, "remove": [2, 5]}}], "reason": "合并原因简述"}}
+如果没有重复，返回：{{"merge_groups": [], "reason": "无重复"}}"""
+
+        try:
+            result = await self.gemini.generate_json(
+                prompt=prompt,
+                system_prompt="你是新闻去重专家，只合并明确报道同一事件的新闻。谨慎判断，宁可保留也不要误删。",
+                max_tokens=1024,
+            )
+
+            if isinstance(result, dict) and "raw_response" in result:
+                return items
+
+            merge_groups = result.get("merge_groups", []) if isinstance(result, dict) else []
+            if not merge_groups:
+                return items
+
+            remove_indices = set()
+            for group in merge_groups:
+                for rm_idx in group.get("remove", []):
+                    remove_indices.add(rm_idx - 1)
+
+            if not remove_indices:
+                return items
+
+            merged = [item for idx, item in enumerate(items) if idx not in remove_indices]
+            logger.info(
+                f"📊 AI合并去重: {len(items)} → {len(merged)} 条"
+                f"（AI建议合并 {len(remove_indices)} 条: {result.get('reason', '')}）"
+            )
+            return merged
+
+        except Exception as e:
+            logger.debug(f"📊 AI合并去重失败（不影响流程）: {e}")
+            return items
+
     async def process_items(self, items: list[NewsItem]) -> list[NewsItem]:
         """
         批量处理新闻条目：
-        1. 数据库去重
-        2. 保存到数据库
-        3. 生成AI摘要和分类
+        1. 标题去重
+        2. AI智能合并
+        3. 数据库去重
+        4. 保存到数据库
+        5. 生成AI摘要和分类
         确保每条新闻都被保留，AI处理失败时使用原始摘要
         """
         if not items:
@@ -57,7 +160,15 @@ class NewsProcessor:
         total_collected = len(items)
         logger.info(f"📊 开始处理: 共采集 {total_collected} 条原始新闻")
 
-        # 第一步：去重并保存新条目
+        # 第0步：标题级快速去重
+        items = self._title_deduplicate(items)
+        logger.info(f"📊 标题去重后: {len(items)} 条")
+
+        # 第0.5步：AI智能合并重复报道
+        items = await self._ai_merge_duplicates(items)
+        logger.info(f"📊 AI合并后: {len(items)} 条")
+
+        # 第一步：数据库去重并保存新条目
         new_items = []
         duplicate_count = 0
         for item in items:
@@ -67,7 +178,7 @@ class NewsProcessor:
             else:
                 duplicate_count += 1
 
-        logger.info(f"📊 去重结果: {duplicate_count} 条重复, {len(new_items)} 条新新闻")
+        logger.info(f"📊 数据库去重结果: {duplicate_count} 条重复, {len(new_items)} 条新新闻")
 
         if not new_items:
             logger.info("所有新闻均为重复，无需处理")

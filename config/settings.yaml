@@ -71,10 +71,8 @@ collectors:
       - "https://venturebeat.com/category/ai/feed/"
       - "https://arstechnica.com/tagged/ai/feed/"
       # 中文源
-      - "https://www.36kr.com/feed"
       - "https://www.jiqizhixin.com/rss"
       - "https://www.qbitai.com/feed"
-      - "https://www.chinaz.com/rss/ai.xml"
   china_ai:
     enabled: true
     name: "中国AI厂商"
